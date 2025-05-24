@@ -1,6 +1,6 @@
 import streamlit as st
-import os # ファイル操作のために必要_os.path._最終的には不要？
-from pypdf import PdfReader  # PDFからテキストを抽出するために必要
+import os
+from pypdf import PdfReader
 
 # セッション状態を初期化
 if 'page' not in st.session_state:
@@ -9,13 +9,16 @@ if 'page' not in st.session_state:
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
+if "uploaded_file" not in st.session_state:
+    st.session_state.uploaded_file = None
+
 # 認証機能
 def authenticate():
     st.title("ログインページ")
     username = st.text_input("IDを入力してください", key="username")
     password = st.text_input("パスワードを入力してください", type="password", key="password")
     if st.button("ログイン"):
-        if username == "admin" and password == "password123":  # サンプルのIDとパスワード
+        if username == "admin" and password == "password123":
             st.session_state.authenticated = True
             st.session_state.page = 'maintenance'
         else:
@@ -25,14 +28,6 @@ def authenticate():
 
 # メインページ
 def main_page():
-    page_bg_color = '''
-    <style>
-    .stApp {
-        background-color: #f0f8ff;
-    }
-    </style>
-    '''
-    st.markdown(page_bg_color, unsafe_allow_html=True)
     st.title("メインページ")
     st.write("これはメインページです！")
 
@@ -48,42 +43,57 @@ def maintenance_page():
     st.title("メンテナンスページ")
     st.write("現在メンテナンス中です。")
 
+
+    # ファイルアップロードボタンを追加
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("アップロード"):
+            st.session_state.page = "upload"
+
+    with col2:
+        if st.button("ファイル削除"):
+            st.session_state.page = "delete"
+
+    if st.button("ログアウト"):
+        st.session_state.authenticated = False
+        st.session_state.page = "main"
+
+# アップロードページ
+def upload_page():
+    st.title("アップロードページ")
+    st.write("現在メンテナンス中です。")
+
     # セッション状態の初期化
-    if "uploaded_file" not in st.session_state:
-        st.session_state.uploaded_file = None
+    st.session_state.uploaded_file = None
 
     # ファイルアップロードボタンを追加
     uploaded_file = st.file_uploader("ファイルをアップロードしてください")
     upload = False
     cancel = False
     if uploaded_file:
-            # ファイル名と拡張子の確認
-            st.session_state.uploaded_file = uploaded_file
-            allowed_extensions = ['txt', 'xml', 'csv', 'pdf']  # 許可するファイル形式
-            file_name = uploaded_file.name
-            file_extension = file_name.split('.')[-1]
+        st.session_state.uploaded_file = uploaded_file
+        allowed_extensions = ['txt', 'xml', 'csv', 'pdf']
+        file_name = uploaded_file.name
+        file_extension = file_name.split('.')[-1]
 
+        if file_extension not in allowed_extensions:
+            st.error(f"許可されていないファイル形式です: {file_extension}")
+        else:
+            file_content = uploaded_file.getvalue().decode('utf-8', errors='ignore')
+            st.write("ファイル内容の一部:")
+            st.text(file_content[:500])
 
-            if file_extension not in allowed_extensions:
-                st.error(f"許可されていないファイル形式です: {file_extension}")
-            else:
-                # ファイル内容の確認（例として最初の一部を表示）
-                file_content = uploaded_file.getvalue().decode('utf-8', errors='ignore')
-                st.write("ファイル内容の一部:")
-                st.text(file_content[:500])  # 最初の500文字を表示
-
-                col1, col2 = st.columns(2)
+            col1, col2 = st.columns(2)
             with col1:
                 if st.button("確定"):
                     upload = True
 
             with col2:
                 if st.button("キャンセル"):
-                   cancel = True
-                
+                    cancel = True
 
-    if upload==True:
-        # ダウンロードフォルダに保存
+    if upload:
         download_path = os.path.expanduser("~/Downloads")
         if not os.path.exists(download_path):
             os.makedirs(download_path)
@@ -92,14 +102,27 @@ def maintenance_page():
         with open(file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        st.success(f"ファイルを保存しました: {file_path}")    
-        
-    if cancel==True:
-        st.warning("アップロードをキャンセルしました。")
-        # セッションリセット
-        st.session_state.uploaded_file = None
-        #maintenance_page()
+        st.success(f"ファイルを保存しました: {file_path}")
 
+    if cancel:
+        st.session_state.uploaded_file = None
+        #st.rerun()  # ページをリフレッシュ
+        st.warning("アップロードをキャンセルしました。")
+        st.session_state.page = "maintenance"
+        
+    if st.session_state.uploaded_file is None:
+        st.write("ファイルがアップロードされていません。")
+
+    if st.button("ログアウト"):
+        st.session_state.authenticated = False
+        st.session_state.page = "main"
+# 削除ページ
+def delete_page():
+    st.title("削除ページ")
+    st.write("現在メンテナンス中です。")
+
+    if st.button("メンテナンスページに戻る"):
+        st.session_state.page = "maintenance"
     if st.button("ログアウト"):
         st.session_state.authenticated = False
         st.session_state.page = "main"
@@ -112,3 +135,7 @@ elif st.session_state.page == 'login':
     authenticate()
 elif st.session_state.page == 'maintenance' and st.session_state.authenticated:
     maintenance_page()
+elif st.session_state.page == 'upload':
+    upload_page()
+elif st.session_state.page == 'delete':
+    delete_page()
