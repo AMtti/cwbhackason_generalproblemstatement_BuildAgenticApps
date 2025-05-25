@@ -1,6 +1,7 @@
 import streamlit as st
-import os
-from pypdf import PdfReader
+import os # ファイルアップロードと削除のためのライブラリ
+from pypdf import PdfReader # PDFからテキストを抽出するためのライブラリ
+import xml.etree.ElementTree as ET # XMLからテキストを抽出するためのライブラリ
 
 # セッション状態を初期化
 if 'page' not in st.session_state:
@@ -80,10 +81,30 @@ def upload_page():
         if file_extension not in allowed_extensions:
             st.error(f"許可されていないファイル形式です: {file_extension}")
         else:
-            file_content = uploaded_file.getvalue().decode('utf-8', errors='ignore')
-            st.write("ファイル内容の一部:")
-            st.text(file_content[:500])
+            if file_extension == 'pdf': #PDF
+                text = extract_text_from_pdf(uploaded_file) # PDFからテキストを抽出
+                # テキストファイルに書き込む
+                if text == "":
+                    st.warning("PDFからテキストを抽出できませんでした。PDFが認識できない形式である可能性があります。.txt 若しくは .csv, .xml形式で再試行してください。")
+                else:
+                    st.write("ファイル内容の一部:")
+                    st.text(text[:500])
 
+            elif file_extension in ['txt', 'csv']: # テキストファイルまたはCSVファイル
+                file_content = uploaded_file.getvalue().decode('utf-8', errors='ignore')
+                st.write("ファイル内容の一部:")
+                st.text(file_content[:500])
+
+            elif file_extension == 'xml': # XMLファイル
+                # XMLファイルを読み込む
+                tree = ET.parse(uploaded_file)
+                root = tree.getroot()
+                text_content = extract_text(root)  # ← rootを渡す
+                text_str = "\n".join(text_content)  # リストを文字列に変換
+                st.write("ファイル内容の一部:")
+                st.text(text_str[:500])
+            
+            # 確認ボタンとキャンセルボタンを表示
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("確定"):
@@ -105,7 +126,7 @@ def upload_page():
         st.success(f"ファイルを保存しました: {file_path}")
 
     if cancel:
-        st.session_state.uploaded_file = None
+        #st.session_state.uploaded_file = None
         #st.rerun()  # ページをリフレッシュ
         st.warning("アップロードをキャンセルしました。")
         st.session_state.page = "maintenance"
@@ -116,6 +137,9 @@ def upload_page():
     if st.button("ログアウト"):
         st.session_state.authenticated = False
         st.session_state.page = "main"
+
+
+        
 # 削除ページ
 def delete_page():
     st.title("削除ページ")
@@ -126,6 +150,26 @@ def delete_page():
     if st.button("ログアウト"):
         st.session_state.authenticated = False
         st.session_state.page = "main"
+
+# PDFからテキストを抽出
+def extract_text_from_pdf(uploaded_file):
+    #uploaded_file.seek(0)  # ストリームの先頭に戻す
+    reader = PdfReader(uploaded_file)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text()
+    return text
+
+
+
+# XMLからテキストを抽出
+def extract_text(element):
+    text_content = []
+    if element.text:
+        text_content.append(element.text.strip())
+    for child in element:
+        text_content.extend(extract_text(child))
+    return text_content
 
 
 # ページ遷移
