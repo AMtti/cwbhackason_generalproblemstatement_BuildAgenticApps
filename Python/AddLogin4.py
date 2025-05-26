@@ -147,10 +147,9 @@ def upload_xml_page():
                 text_str = "\n".join(text_content)  # リストを文字列に変換
                 st.write("ファイル内容の一部:")
                 st.text(text_str[:500])
-                xml_to_json(root) # XMLをJSONに変換して保存
+                #xml_to_json(root) # XMLをJSONに変換して保存
+                json_data = xml_to_json(root)
 
-
-            
             # 確認ボタンとキャンセルボタンを表示
             col1, col2 = st.columns(2)
             with col1:
@@ -158,7 +157,7 @@ def upload_xml_page():
                     upload = True
 
             with col2:
-                if st.button("キャンセル"):
+                if st.button("戻る"):
                     cancel = True
 
     if upload:
@@ -166,11 +165,15 @@ def upload_xml_page():
         if not os.path.exists(download_path):
             os.makedirs(download_path)
 
-        file_path = os.path.join(download_path, uploaded_file.name)
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        # アップロードされたファイル名（拡張子を除去）＋.txt
+        base_name = os.path.splitext(uploaded_file.name)[0]
+        save_file_path = os.path.join(download_path, f"{base_name}.json")
 
-        st.success(f"ファイルを保存しました: {file_path}")
+        with open(save_file_path, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, ensure_ascii=False, indent=2)
+
+        st.success(f"ファイルを保存しました: {save_file_path}")
+
 
     if cancel:
         #st.session_state.uploaded_file = None
@@ -197,15 +200,16 @@ def upload_xml_page():
 def upload_text_page():
     st.title("テキストファイルアップロードページ")
     st.write("現在メンテナンス中です。")
-    # キー入力用のテキストボックスを追加
-    key_value = st.text_input("キーを入力してください")
-    st.write(f"入力されたキー: {key_value}")
 
     # セッション状態の初期化
     st.session_state.uploaded_file = None
 
+    # キー入力用のテキストボックスを追加
+    key_value = st.text_input("キーを入力してください")
+    st.write(f"入力されたキー: {key_value}")
+
     # ファイルアップロードボタンを追加
-    uploaded_file = st.file_uploader("ファイルをアップロードしてください")
+    uploaded_file = st.file_uploader("ファイルをアップロードしてください。含まれる文字列を値として格納します")
     upload = False
     cancel = False
     if uploaded_file:
@@ -215,6 +219,7 @@ def upload_text_page():
         file_extension = file_name.split('.')[-1]
 
         if file_extension not in allowed_extensions:
+            # XMLファイルはここでは扱わない
             if file_extension == 'xml':
                 st.error("XMLファイルアップロードページでアップロードしてください。")
                 if st.button("XMLファイルアップロード"):
@@ -238,8 +243,12 @@ def upload_text_page():
                 st.write("ファイル内容の一部:")
                 st.text(text[:500])
 
-            # XMLファイルはここでは扱わない
+            # JSON形式で保存          
+            value=text
+            json_data = {key_value: value}
+            st.write(json_data)
             
+
             # 確認ボタンとキャンセルボタンを表示
             col1, col2 = st.columns(2)
             with col1:
@@ -247,7 +256,7 @@ def upload_text_page():
                     upload = True
 
             with col2:
-                if st.button("キャンセル"):
+                if st.button("戻る"):
                     cancel = True
 
     if upload:
@@ -255,15 +264,21 @@ def upload_text_page():
         if not os.path.exists(download_path):
             os.makedirs(download_path)
 
-        file_path = os.path.join(download_path, uploaded_file.name)
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        # アップロードされたファイル名（拡張子を除去）＋.txt
+        base_name = os.path.splitext(uploaded_file.name)[0]
+        save_file_path = os.path.join(download_path, f"{base_name}.json")
 
-        st.success(f"ファイルを保存しました: {file_path}")
+        with open(save_file_path, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, ensure_ascii=False, indent=2)
 
-    if cancel:
+        st.success(f"ファイルを保存しました: {save_file_path}")
         #st.session_state.uploaded_file = None
+
+    # キャンセルボタンが押された場合
+
+    if cancel: 
         #st.rerun()  # ページをリフレッシュ
+        
         st.warning("アップロードをキャンセルしました。")
         st.session_state.page = "maintenance"
 
@@ -323,8 +338,6 @@ def extract_text_from_xml(element):
 
 def xml_to_json(root):
 
-   # tree = ET.parse('労働基準法.xml')
-   # root = tree.getroot()
 
     # 目次ラベル取得
     lawTitle = root.find('.//LawTitle').text
@@ -345,15 +358,15 @@ def xml_to_json(root):
         articles_dict[key] = sentences
 
     # JSONデータ作成
-    output = {
+    json_data = {
         "法律名": lawTitle,
         "条文": articles_dict
 
     }
 
     with open("output.json", "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
-
+        json.dump(json_data, f, ensure_ascii=False, indent=2)
+    return json_data  
 
 # ページ遷移
 if st.session_state.page == 'main':
