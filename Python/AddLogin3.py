@@ -24,7 +24,9 @@ def authenticate():
             st.session_state.page = 'maintenance'
         else:
             st.error("IDまたはパスワードが間違っています！")
-    if st.button("メインページに戻る"):
+     #サイドバー
+    st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く") 
+    if st.sidebar.button("メインページに戻る"):
         st.session_state.page = 'main'
 
 # メインページ
@@ -35,8 +37,10 @@ def main_page():
     user_input = st.text_input("お困りごとを教えてください。", value="ここにテキストを入力してください。")
     if user_input:
         st.write(f"あなたが入力した内容: {user_input}")
-
-    if st.button("メンテナンスページへ移動"):
+    
+    #サイドバー
+    st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く")     
+    if st.sidebar.button("メンテナンスページへ移動"):
         st.session_state.page = 'login'
 
 # メンテナンスページ
@@ -55,8 +59,9 @@ def maintenance_page():
     with col2:
         if st.button("ファイル削除"):
             st.session_state.page = "delete"
-
-    if st.button("ログアウト"):
+   #サイドバー
+    st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く")     
+    if st.sidebar.button("ログアウト"):
         st.session_state.authenticated = False
         st.session_state.page = "main"
 
@@ -134,7 +139,10 @@ def upload_page():
     if st.session_state.uploaded_file is None:
         st.write("ファイルがアップロードされていません。")
 
-    if st.button("ログアウト"):
+    #サイドバー
+    st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く")     
+    
+    if st.sidebar.button("ログアウト"):
         st.session_state.authenticated = False
         st.session_state.page = "main"
 
