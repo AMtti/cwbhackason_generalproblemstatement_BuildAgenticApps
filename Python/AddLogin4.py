@@ -99,14 +99,17 @@ def maintenance_page():
 
     # ファイルアップロードボタンを追加
 
-    col1, col2,col3= st.columns(3)
+    col1, col2,col3,col4= st.columns(4)
     with col1:
         if st.button("XMLアップロード"):
             st.session_state.page = "upload_xml"
     with col2:
+        if st.button("テキスト入力"):
+            st.session_state.page = "input_text"  
+    with col3:
         if st.button("テキストアップロード"):
             st.session_state.page = "upload_text"
-    with col3:
+    with col4:
         if st.button("ファイル削除"):
             st.session_state.page = "delete"
    #サイドバー
@@ -185,7 +188,9 @@ def upload_xml_page():
         st.write("ファイルがアップロードされていません。")
 
     #サイドバー
-    st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く")     
+    st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く")
+    if st.sidebar.button("テキスト入力"):
+        st.session_state.page = "input_text"      
     if st.sidebar.button("テキストアップロード"):
         st.session_state.page = "upload_text"   
     if st.sidebar.button("ファイル削除"):
@@ -289,7 +294,9 @@ def upload_text_page():
     #サイドバー
     st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く")     
     if st.sidebar.button("XMLアップロード"):
-        st.session_state.page = "upload_xml"   
+        st.session_state.page = "upload_xml"  
+    if st.sidebar.button("テキスト入力"):
+        st.session_state.page = "input_text" 
     if st.sidebar.button("ファイル削除"):
         st.session_state.page = "delete" 
     if st.sidebar.button("メンテナンスページに戻る"):
@@ -298,7 +305,80 @@ def upload_text_page():
         st.session_state.authenticated = False
         st.session_state.page = "main"
 
+ #テキスト入力のページ
+def input_text_page():
+    st.title("テキスト入力ページ")
+    st.write("現在メンテナンス中です。")
+
+    # セッション状態の初期化
+    st.session_state.uploaded_file = None
+    upload = False
+    cancel = False
+
+    # キー入力用のテキストボックスを追加
+    key_value = st.text_input("キーを入力してください")
+    st.write(f"入力されたキー: {key_value}")
+
+    # 値入力用のテキストボックスを追加
+    value = st.text_input("内容を入力してください")
+    st.write(f"入力された内容: {value}")
+
+    # JSON形式で保存            
+    json_data = {key_value: value}
+    st.write(json_data)
+
+    # 確認ボタンとキャンセルボタンを表示
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("確定"):
+            upload = True
+
+    with col2:
+        if st.button("戻る"):
+            cancel = True
+    
+
+    if upload:
+        download_path = os.path.expanduser("~/Downloads")
+        if not os.path.exists(download_path):
+            os.makedirs(download_path)
+
+        # アップロードされたファイル名（拡張子を除去）＋.txt
+        base_name = key_value.replace(" ", "_")  # スペースをアンダースコアに置換
+        save_file_path = os.path.join(download_path, f"{base_name}.json")
+
+        with open(save_file_path, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, ensure_ascii=False, indent=2)
+
+        st.success(f"ファイルを保存しました: {save_file_path}")
+        #st.session_state.uploaded_file = None
+
+    # キャンセルボタンが押された場合
+
+    if cancel: 
+        #st.rerun()  # ページをリフレッシュ
         
+        st.warning("アップロードをキャンセルしました。")
+        st.session_state.page = "maintenance"
+
+    if st.session_state.uploaded_file is None:
+        st.write("ファイルがアップロードされていません。")
+
+    
+    #サイドバー
+    st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く")     
+    if st.sidebar.button("XMLアップロード"):
+        st.session_state.page = "upload_xml"  
+    if st.sidebar.button("テキストアップロード"):
+        st.session_state.page = "upload_text"   
+    if st.sidebar.button("ファイル削除"):
+        st.session_state.page = "delete" 
+    if st.sidebar.button("メンテナンスページに戻る"):
+        st.session_state.page = "maintenance"
+    if st.sidebar.button("ログアウト"):
+        st.session_state.authenticated = False
+        st.session_state.page = "main"
+       
 # 削除ページ
 def delete_page():
     st.title("削除ページ")
@@ -307,7 +387,9 @@ def delete_page():
     #サイドバー
     st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く")     
     if st.sidebar.button("XMLアップロード"):
-        st.session_state.page = "upload_xml"   
+        st.session_state.page = "upload_xml" 
+    if st.sidebar.button("テキスト入力"):
+        st.session_state.page = "input_text"   
     if st.sidebar.button("テキストアップロード"):
         st.session_state.page = "upload_text" 
     if st.sidebar.button("メンテナンスページに戻る"):
@@ -377,6 +459,8 @@ elif st.session_state.page == 'maintenance' and st.session_state.authenticated:
     maintenance_page()
 elif st.session_state.page == 'upload_xml':
     upload_xml_page()
+elif st.session_state.page == 'input_text':
+    input_text_page()
 elif st.session_state.page == 'upload_text':
     upload_text_page()
 elif st.session_state.page == 'delete':
