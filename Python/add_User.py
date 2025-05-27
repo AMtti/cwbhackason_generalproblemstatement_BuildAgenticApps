@@ -3,13 +3,39 @@ import json
 import pandas as pd
 import streamlit as st
 
-# Azure Blob Storageの接続情報
-connection_string = "DefaultEndpointsProtocol=https;AccountName=accountcwbhackason2025am;AccountKey=77O3OXG8TtgSjVhUX8cEQ5xwpFte1J45U0TGD1MgQjL+bwl1zCprD9gdev7Gq1ZgeKhB8jy/IabQ+AStH7rR5g==;EndpointSuffix=core.windows.net"
-container_name = "users"
-blob_name = "users.json"
+#keyVaultの情報を取得
+from azure.identity import DefaultAzureCredential
+from azure.keyvault.secrets import SecretClient
+
+# Key Vault URI
+key_vault_url = "https://keytaccountcwbhackasonam.vault.azure.net/"
+
+# Key Vault 認証クライアントを作成
+credential = DefaultAzureCredential()
+client = SecretClient(vault_url=key_vault_url, credential=credential)
+
+
+
+def get_credentials_from_blob():
+    # Azure Blob Storage の接続情報
+    connection_string = client.get_secret("connectionstringUsers").value
+    container_name = "users"
+    blob_name = "users.json"
+    
+    # Blob Storage に接続
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+    
+    # Blob からデータを取得
+    blob_data = blob_client.download_blob().readall()
+    return json.loads(blob_data)
+
 
 # Blobデータをダウンロード
 def download_blob_data():
+    connection_string = client.get_secret("connectionstringUsers").value
+    container_name = "users"
+    blob_name = "users.json"
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
     blob_data = blob_client.download_blob().readall()
@@ -17,6 +43,9 @@ def download_blob_data():
 
 # Blobデータをアップロード
 def upload_blob_data(data):
+    connection_string = client.get_secret("connectionstringUsers").value
+    container_name = "users"
+    blob_name = "users.json"
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
     blob_client.upload_blob(json.dumps(data), overwrite=True)
