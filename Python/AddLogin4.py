@@ -97,7 +97,7 @@ def maintenance_page():
     st.write("現在メンテナンス中です。")
 
 
-    # ファイルアップロードボタンを追加
+    # ファイル操作ボタンを追加
 
     col1, col2,col3,col4= st.columns(4)
     with col1:
@@ -112,7 +112,9 @@ def maintenance_page():
     with col4:
         if st.button("ファイル削除"):
             st.session_state.page = "delete"
-   #サイドバー
+    # 管理者メニューボタンを追加
+
+    #サイドバー
     st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く")     
     if st.sidebar.button("ログアウト"):
         st.session_state.authenticated = False
@@ -305,7 +307,7 @@ def upload_text_page():
         st.session_state.authenticated = False
         st.session_state.page = "main"
 
- #テキスト入力のページ
+#テキスト入力のページ
 def input_text_page():
     st.title("テキスト入力ページ")
     st.write("現在メンテナンス中です。")
@@ -407,8 +409,6 @@ def extract_text_from_pdf(uploaded_file):
         text += page.extract_text()
     return text
 
-
-
 # XMLからテキストを抽出
 def extract_text_from_xml(element):
     text_content = []
@@ -417,7 +417,7 @@ def extract_text_from_xml(element):
     for child in element:
         text_content.extend(extract_text_from_xml(child))
     return text_content
-
+# XMLから抽出したテキストをJSONに変換して保存
 def xml_to_json(root):
 
 
@@ -449,6 +449,7 @@ def xml_to_json(root):
     with open("output.json", "w", encoding="utf-8") as f:
         json.dump(json_data, f, ensure_ascii=False, indent=2)
     return json_data  
+
 
 # ページ遷移
 if st.session_state.page == 'main':

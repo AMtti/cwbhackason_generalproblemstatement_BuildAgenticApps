@@ -60,7 +60,7 @@ def delete_user(data, username_to_remove):
     updated_data = [user for user in data if user["username"] != username_to_remove]
     return updated_data
 
-# Streamlitを使用して削除機能を作成
+# ユーザー削除
 def del_user():
     st.title("Blobデータの編集（削除機能付き）")
 
