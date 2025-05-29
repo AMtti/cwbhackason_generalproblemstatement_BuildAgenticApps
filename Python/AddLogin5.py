@@ -274,7 +274,7 @@ def upload_text_page():
         if not os.path.exists(download_path):
             os.makedirs(download_path)
 
-        # アップロードされたファイル名（拡張子を除去）＋.txt
+        # アップロードされたファイル名（拡張子を除去）＋.json
         base_name = os.path.splitext(uploaded_file.name)[0]
         save_file_path = os.path.join(download_path, f"{base_name}.json")
 
