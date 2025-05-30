@@ -4,8 +4,13 @@ import os # ファイルアップロードと削除のためのライブラリ
 from pypdf import PdfReader # PDFからテキストを抽出するためのライブラリ
 import xml.etree.ElementTree as ET # XMLからテキストを抽出するためのライブラリ
 import json # JSONファイルを扱うためのライブラリ
+import re #正規表現を使用するためのインポート
 
 from azure.storage.blob import BlobServiceClient # Azure Blob Storageを扱うためのライブラリ
+
+from azure.cosmos import CosmosClient, PartitionKey # Azure Cosmos DBを扱うためのライブラリ
+from openai import AzureOpenAI  # OpenAIのAPIを扱うためのライブラリ
+import uuid # UUIDを生成するためのライブラリ
 
 #keyVaultの情報を取得
 from azure.identity import DefaultAzureCredential
@@ -16,13 +21,13 @@ key_vault_url = "https://keytaccountcwbhackasonam.vault.azure.net/"
 
 # Key Vault 認証クライアントを作成
 credential = DefaultAzureCredential()
-client = SecretClient(vault_url=key_vault_url, credential=credential)
+seclet_client = SecretClient(vault_url=key_vault_url, credential=credential)
 
 
 
 def get_credentials_from_blob():
     # Azure Blob Storage の接続情報
-    connection_string = client.get_secret("connectionstringUsers").value
+    connection_string = seclet_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_name = "users.json"
     
@@ -161,7 +166,7 @@ def upload_xml_page():
             # 確認ボタンとキャンセルボタンを表示
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("確定"):
+                if st.button("実行"):
                     upload = True
 
             with col2:
@@ -169,25 +174,17 @@ def upload_xml_page():
                     cancel = True
 
     if upload:
-        download_path = os.path.expanduser("~/Downloads")
-        if not os.path.exists(download_path):
-            os.makedirs(download_path)
-
-        # アップロードされたファイル名（拡張子を除去）＋.txt
-        base_name = os.path.splitext(uploaded_file.name)[0]
-        save_file_path = os.path.join(download_path, f"{base_name}.json")
-
-        with open(save_file_path, "w", encoding="utf-8") as f:
-            json.dump(json_data, f, ensure_ascii=False, indent=2)
-
-        st.success(f"ファイルを保存しました: {save_file_path}")
+        create_embedding_and_save_to_cosmos_db(json_data)
+        st.success("埋め込みを作成し、Azure Cosmos DBに保存しました。")
 
 
     if cancel:
         #st.session_state.uploaded_file = None
         #st.rerun()  # ページをリフレッシュ
         st.warning("アップロードをキャンセルしました。")
+        text_str=""
         st.session_state.page = "maintenance"
+
 
     if st.session_state.uploaded_file is None:
         st.write("ファイルがアップロードされていません。")
@@ -205,6 +202,55 @@ def upload_xml_page():
     if st.sidebar.button("ログアウト"):
         st.session_state.authenticated = False
         st.session_state.page = "main"
+
+
+#埋め込み作成してAzure Cosmos DBに保存する関数
+def create_embedding_and_save_to_cosmos_db(json_data):
+    # Cosmos DBの接続情報
+    cosmos_client = CosmosClient(
+        seclet_client.get_secret("cosmosdbendpoint").value, 
+        seclet_client.get_secret("cosmosdbkey").value
+        )
+
+    # OpenAIの設定
+    textemb_client = AzureOpenAI(
+        api_key=seclet_client.get_secret("textembeddingApiKey").value,
+        api_version="2024-12-01-preview",
+        azure_endpoint=seclet_client.get_secret("textembeddingEndpoint").value
+    )
+
+    # データベースとコンテナーの設定
+    database_name = "LegalNest"
+    container_name = "Statute"
+
+    # データベースとコンテナーの作成または取得
+    database = cosmos_client.create_database_if_not_exists(id=database_name)
+    container = database.create_container_if_not_exists(
+        id=container_name,
+        partition_key=PartitionKey(path="/種別")  # パーティションキーを設定
+    )
+
+    # 条文ごとに埋め込みを生成しつつアイテムを保存
+    for 条文, 内容 in json_data["条文"].items():
+        # 埋め込み用のテキストを作成
+        text_to_embed = " ".join(内容)  # 内容リストを単一の文字列に結合
+        
+        # OpenAI APIを使用して埋め込みを生成
+        embedding_response = textemb_client.embeddings.create(
+            input=[text_to_embed],  # リストで渡す
+            model="text-embedding-3-large"
+        )
+        #embedding_response = response.json_data[0].embedding
+        embedding = embedding_response.data[0].embedding
+        # アイテムを作成
+        item = {
+            "id": str(uuid.uuid4()),
+            "種別": json_data["法律名"],
+            "条文名": 条文,
+            "内容":text_to_embed ,
+            "embedding": embedding       
+        }
+        container.upsert_item(item)  # データを挿入または更新
 
 #テキストファイルのアップロードページ
 def upload_text_page():
@@ -259,10 +305,10 @@ def upload_text_page():
             st.write(json_data)
             
 
-            # 確認ボタンとキャンセルボタンを表示
+            # 実行ボタンとキャンセルボタンを表示
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("確定"):
+                if st.button("実行"):
                     upload = True
 
             with col2:
@@ -280,9 +326,9 @@ def upload_text_page():
 
         with open(save_file_path, "w", encoding="utf-8") as f:
             json.dump(json_data, f, ensure_ascii=False, indent=2)
-
+        text=""
         st.success(f"ファイルを保存しました: {save_file_path}")
-        #st.session_state.uploaded_file = None
+        st.session_state.page = "maintenance"
 
     # キャンセルボタンが押された場合
 
@@ -290,6 +336,7 @@ def upload_text_page():
         #st.rerun()  # ページをリフレッシュ
         
         st.warning("アップロードをキャンセルしました。")
+        text=""
         st.session_state.page = "maintenance"
 
     if st.session_state.uploaded_file is None:
@@ -332,10 +379,10 @@ def input_text_page():
     json_data = {key_value: value}
     st.write(json_data)
 
-    # 確認ボタンとキャンセルボタンを表示
+    # 実行ボタンとキャンセルボタンを表示
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("確定"):
+        if st.button("実行"):
             upload = True
 
     with col2:
@@ -385,7 +432,7 @@ def input_text_page():
         st.session_state.page = "main"
        
 # 削除ページ
-def delete_page():
+def deleteByPatition_page():
     st.title("削除ページ")
     st.write("現在メンテナンス中です。")
 
@@ -422,14 +469,12 @@ def extract_text_from_xml(element):
     return text_content
 # XMLから抽出したテキストをJSONに変換して保存
 def xml_to_json(root):
-
-
-    # 目次ラベル取得
+    # 法律名取得
     lawTitle = root.find('.//LawTitle').text
 
     # すべての条文を処理
     articles_dict = {}
-    for article in root.findall('.//Article'):
+    for article in root.findall('.//MainProvision//Article'):
         article_title = article.findtext('ArticleTitle') or ""
         article_caption = article.findtext('ArticleCaption') or ""
         key = f"{article_title}{article_caption}"
@@ -442,6 +487,21 @@ def xml_to_json(root):
                     sentences.append(sentence.text.strip())
         articles_dict[key] = sentences
 
+    for article in root.findall('.//SupplProvision//Article'):
+        supplProvision_Label = "附則_"
+        article_title = article.findtext('ArticleTitle') or ""
+        article_caption = article.findtext('ArticleCaption') or ""
+        key = f"{supplProvision_Label}{article_title}{article_caption}"
+
+        # パラグラフセンテンスを抽出
+        sentences = []
+        for para in article.findall('.//ParagraphSentence'):
+            for sentence in para.findall('Sentence'):
+                if sentence.text:
+                    sentences.append(sentence.text.strip())
+        articles_dict[key] = sentences
+
+
     # JSONデータ作成
     json_data = {
         "法律名": lawTitle,
@@ -449,14 +509,12 @@ def xml_to_json(root):
 
     }
 
-    with open("output.json", "w", encoding="utf-8") as f:
-        json.dump(json_data, f, ensure_ascii=False, indent=2)
-    return json_data  
+    return json_data
 
 #管理者の認証情報を取得
 def get_admin_credentials_from_blob():
     # Azure Blob Storage の接続情報
-    connection_string = client.get_secret("connectionstringUsers").value
+    connection_string = seclet_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_admin_name = "admi.json"   
     # Blob Storage に接続
@@ -529,7 +587,7 @@ def admin():
 
 # Blobデータをダウンロード
 def download_blob_data():
-    connection_string = client.get_secret("connectionstringUsers").value
+    connection_string = seclet_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_name = "users.json"
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
@@ -539,7 +597,7 @@ def download_blob_data():
 
 # Blobデータをアップロード
 def upload_blob_data(data):
-    connection_string = client.get_secret("connectionstringUsers").value
+    connection_string = seclet_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_name = "users.json"
 
@@ -640,7 +698,7 @@ elif st.session_state.page == 'input_text':
 elif st.session_state.page == 'upload_text':
     upload_text_page()
 elif st.session_state.page == 'delete':
-    delete_page()
+    deleteByPatition_page()
 elif st.session_state.page == 'add_User':
     add_user()
 elif st.session_state.page == 'del_User':
