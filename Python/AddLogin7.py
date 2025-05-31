@@ -24,8 +24,8 @@ from azure.keyvault.secrets import SecretClient
 key_vault_url = "https://keytaccountcwbhackasonam.vault.azure.net/"
 
 # Key Vault 認証クライアントを作成
-credential = key_DefaultAzureCredential()
-secret_client = SecretClient(vault_url=key_vault_url, credential=credential)
+key_credential = key_DefaultAzureCredential()
+secret_client = SecretClient(vault_url=key_vault_url, credential=key_credential)
 
 # Cosmos DBの接続情報
 cosmosdb_client = CosmosClient(
@@ -33,6 +33,9 @@ cosmosdb_client = CosmosClient(
     secret_client.get_secret("cosmosdbkey").value
     )
 
+# シークレットの取得
+aifoundry_endpoint = secret_client.get_secret("aiFoundryAgentEndpoint").value
+model_name=secret_client.get_secret("aiFoundryModel").value
 
 def get_credentials_from_blob():
     # Azure Blob Storage の接続情報
@@ -63,7 +66,7 @@ def authenticate():
     st.title("ログインページ")
 
     # Azure Blob Storage から認証情報を取得
-    credentials = get_credentials_from_blob()
+    login_credentials = get_credentials_from_blob()
 
     # ユーザー入力
     username = st.text_input("IDを入力してください", key="username")
@@ -74,8 +77,8 @@ def authenticate():
         authenticated = False
 
         # リスト内のユーザー情報を検索
-        for credential in credentials:
-            if username == credential["username"] and password == credential["password"]:
+        for login_credential in login_credentials:
+            if username == login_credential["username"] and password == login_credential["password"]:
                 authenticated = True
                 break
 
@@ -471,6 +474,8 @@ def deleteByPatition_page():
             cancel = True
     else:
         # DataFrameが空でない場合の処理
+        value_counts_df = df['種別'].value_counts().reset_index()
+        value_counts_df.columns = ['種別', '件数']  # カラム名を設定
         st.table(df['種別'].value_counts())
         category = st.selectbox(
             '種別を選択してください',
@@ -544,6 +549,7 @@ def extract_text_from_xml(element):
     for child in element:
         text_content.extend(extract_text_from_xml(child))
     return text_content
+
 # XMLから抽出したテキストをJSONに変換して保存
 def xml_to_json(root):
     # 法律名取得
@@ -588,6 +594,7 @@ def xml_to_json(root):
 
     return json_data
 
+
 #管理者の認証情報を取得
 def get_admin_credentials_from_blob():
     # Azure Blob Storage の接続情報
@@ -607,7 +614,7 @@ def authenticate_admin():
     st.title("管理者ページログイン")
 
     # Azure Blob Storage から認証情報を取得
-    credentials = get_admin_credentials_from_blob()
+    admin_credentials = get_admin_credentials_from_blob()
 
     # ユーザー入力
     username = st.text_input("IDを入力してください", key="username")
@@ -618,8 +625,8 @@ def authenticate_admin():
         authenticated = False
 
         # リスト内のユーザー情報を検索
-        for credential in credentials:
-            if username == credential["username"] and password == credential["password"]:
+        for admin_credential in admin_credentials:
+            if username == admin_credential["username"] and password == admin_credential["password"]:
                 authenticated = True
                 break
 
