@@ -13,21 +13,26 @@ from openai import AzureOpenAI  # OpenAIのAPIを扱うためのライブラリ
 import uuid # UUIDを生成するためのライブラリ
 
 #keyVaultの情報を取得
-from azure.identity import DefaultAzureCredential
+from azure.identity import DefaultAzureCredential as key_DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
 
 # Key Vault URI
 key_vault_url = "https://keytaccountcwbhackasonam.vault.azure.net/"
 
 # Key Vault 認証クライアントを作成
-credential = DefaultAzureCredential()
-seclet_client = SecretClient(vault_url=key_vault_url, credential=credential)
+credential = key_DefaultAzureCredential()
+secret_client = SecretClient(vault_url=key_vault_url, credential=credential)
 
+# Cosmos DBの接続情報
+cosmosdb_client = CosmosClient(
+    secret_client.get_secret("cosmosdbendpoint").value,
+    secret_client.get_secret("cosmosdbkey").value
+    )
 
 
 def get_credentials_from_blob():
     # Azure Blob Storage の接続情報
-    connection_string = seclet_client.get_secret("connectionstringUsers").value
+    connection_string = secret_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_name = "users.json"
     
@@ -208,15 +213,15 @@ def upload_xml_page():
 def create_embedding_and_save_to_cosmos_db(json_data):
     # Cosmos DBの接続情報
     cosmos_client = CosmosClient(
-        seclet_client.get_secret("cosmosdbendpoint").value, 
-        seclet_client.get_secret("cosmosdbkey").value
+        secret_client.get_secret("cosmosdbendpoint").value, 
+        secret_client.get_secret("cosmosdbkey").value
         )
 
     # OpenAIの設定
     textemb_client = AzureOpenAI(
-        api_key=seclet_client.get_secret("textembeddingApiKey").value,
+        api_key=secret_client.get_secret("textembeddingApiKey").value,
         api_version="2024-12-01-preview",
-        azure_endpoint=seclet_client.get_secret("textembeddingEndpoint").value
+        azure_endpoint=secret_client.get_secret("textembeddingEndpoint").value
     )
 
     # データベースとコンテナーの設定
@@ -436,6 +441,61 @@ def deleteByPatition_page():
     st.title("削除ページ")
     st.write("現在メンテナンス中です。")
 
+    # データベースとコンテナーの情報
+    database_name = "LegalNest"
+    container_name = "Statute"
+
+    # データベースとコンテナーのクライアント取得
+    database = cosmosdb_client.get_database_client(database_name)
+    container = database.get_container_client(container_name)
+
+    # SQLクエリを実行して結果を取得
+    query = "SELECT c.種別,c.条文名,c.内容 FROM c"
+    results = container.query_items(
+        query=query,
+        enable_cross_partition_query=True
+    )
+    df = pd.DataFrame(list(results))
+    delete = False
+    cancel = False
+
+    if df.empty:
+        # DataFrameが空の場合の処理
+        
+        st.write("データがありません")
+        if st.button("戻る"):
+            cancel = True
+    else:
+        # DataFrameが空でない場合の処理
+        st.table(df['種別'].value_counts())
+        category = st.selectbox(
+            '種別を選択してください',
+            list(df['種別'].unique()),
+            index=0
+        )
+        # 選択された種別に基づいてフィルタリング
+        filtered_df = df[df['種別']== category]
+        st.write(filtered_df[['種別', '条文名', '内容']])
+        # 実行ボタンとキャンセルボタンを表示
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("実行"):
+                delete = True
+
+        with col2:
+            if st.button("戻る"):
+                cancel = True
+
+    if delete==True:
+        # パーティションキーに基づいてアイテムを削除
+        delete_items(container, category)
+        st.success(f"パーティションキー '{category}' のアイテムを削除しました！")
+    if cancel==True:
+        # メンテナンスページに戻る
+        st.warning("削除をキャンセルしました。")
+        st.session_state.page = "maintenance"
+
     #サイドバー
     st.sidebar.image("../Ishigame_reading.png", caption="キャプションをここに書く")     
     if st.sidebar.button("XMLアップロード"):
@@ -450,6 +510,19 @@ def deleteByPatition_page():
         st.session_state.authenticated = False
         st.session_state.page = "main"
 
+# 指定されたパーティションキーに基づいてアイテムを削除する関数
+def delete_items(container, category):
+    """
+    指定されたパーティションキーに基づいてアイテムを削除する関数
+    """
+
+    # 対象アイテムを検索
+    select_dei_id_query = f"SELECT c.id FROM c WHERE c.種別 = '{category}'"
+    dei_id_items = container.query_items(query=select_dei_id_query, partition_key=category)
+
+    # 該当アイテムを削除
+    for item in dei_id_items:
+        container.delete_item(item=item["id"], partition_key=category)
 # PDFからテキストを抽出
 def extract_text_from_pdf(uploaded_file):
     #uploaded_file.seek(0)  # ストリームの先頭に戻す
@@ -514,7 +587,7 @@ def xml_to_json(root):
 #管理者の認証情報を取得
 def get_admin_credentials_from_blob():
     # Azure Blob Storage の接続情報
-    connection_string = seclet_client.get_secret("connectionstringUsers").value
+    connection_string = secret_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_admin_name = "admi.json"   
     # Blob Storage に接続
@@ -587,7 +660,7 @@ def admin():
 
 # Blobデータをダウンロード
 def download_blob_data():
-    connection_string = seclet_client.get_secret("connectionstringUsers").value
+    connection_string = secret_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_name = "users.json"
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
@@ -597,7 +670,7 @@ def download_blob_data():
 
 # Blobデータをアップロード
 def upload_blob_data(data):
-    connection_string = seclet_client.get_secret("connectionstringUsers").value
+    connection_string = secret_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_name = "users.json"
 

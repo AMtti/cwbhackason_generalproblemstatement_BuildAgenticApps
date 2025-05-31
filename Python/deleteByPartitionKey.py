@@ -20,6 +20,8 @@ client = CosmosClient(
     secret_client.get_secret("cosmosdbkey").value
     )
 
+# Streamlitのセッションステートを初期化
+st.session_state.page ="delete"
 
 def deleteByPatition_page():
     st.title("データ削除ページ")
@@ -76,15 +78,6 @@ def deleteByPatition_page():
         delete_items(container, category)
         st.success(f"パーティションキー '{category}' のアイテムを削除しました！")
 
-# 階層的に表示するカスタム関数
-def display_hierarchical(filtered_df):
-    for _, row in filtered_df.iterrows():
-        st.write(f"・種別: {row['種別']}")
-        st.write(f"　・条文名: {row['条文名']}")
-        st.write(f"　　・内容: {row['内容']}\n")
-
-# 階層表示を実行
-#display_hierarchical(df)
 def delete_items(container, category):
     """
     指定されたパーティションキーに基づいてアイテムを削除する関数
