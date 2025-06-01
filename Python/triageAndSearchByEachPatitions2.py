@@ -1,20 +1,16 @@
-import os
+
 import streamlit as st
 import asyncio
-from pathlib import Path
 import pandas as pd
-import json
 
 # Add references
 from openai import AzureOpenAI
 from azure.identity.aio import DefaultAzureCredential
-from semantic_kernel.agents import AzureAIAgent, AzureAIAgentSettings, AzureAIAgentThread
-from semantic_kernel.functions import kernel_function
-from semantic_kernel.agents import ChatCompletionAgent
-from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion, OpenAIChatCompletion
+from semantic_kernel.agents import AzureAIAgent,  AzureAIAgentThread
 
-from typing import Annotated
+# Azure Cosmos DBのクライアントをインポート
 from azure.cosmos import CosmosClient
+
 #keyVaultの情報を取得
 from azure.identity import DefaultAzureCredential as key_DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
@@ -29,11 +25,34 @@ secret_client = SecretClient(vault_url=key_vault_url, credential=key_credential)
 # シークレットの取得
 aifoundry_endpoint = secret_client.get_secret("aiFoundryAgentEndpoint").value
 model_name=secret_client.get_secret("aiFoundryModel").value
+
 # Cosmos DBの接続情報
 client = CosmosClient(
     secret_client.get_secret("cosmosdbendpoint").value,
     secret_client.get_secret("cosmosdbkey").value
     )
+
+#Tread削除関数の定義
+async def delete_all_threads():
+    async with AzureAIAgent.create_client(
+        credential=DefaultAzureCredential(),
+        endpoint=aifoundry_endpoint
+    ) as chat_client:
+        # まず全スレッドIDをリストとして取得
+        threads = chat_client.agents.threads.list()
+        thread_ids = []
+        async for thread in threads:
+            thread_ids.append(thread.id)
+
+        count = 0
+        for thread_id in thread_ids:
+            try:
+                await chat_client.agents.threads.delete(thread_id)
+                print(f"Deleted thread: {thread_id}")
+                count += 1
+            except Exception as e:
+                print(f"Failed to delete thread {thread_id}: {e}")
+        print(f"Total deleted: {count}")
 
 # Streamlitアプリの設定
 st.title("Azure AI Foundry チャットボット")
@@ -131,13 +150,13 @@ if user_message:
                 definition=law_search_settings
             )
 
-            # 3. 一般チャットエージェント
+            # 3. アシスタントエージェント
             chat_settings = await chat_client.agents.create_agent(
                 model=model_name,
-                name="chat_agent",
+                name="assistant_agent",
                 instructions="あなたは法律相談のAIアシスタントです。一般的な質問に親切に答えてください。"
             )
-            chat_agent = AzureAIAgent(
+            assistant_agent = AzureAIAgent(
                 client=chat_client,
                 definition=chat_settings
             )
@@ -149,10 +168,17 @@ if user_message:
             triage_result = await triage_agent.get_response(thread_id=thread.id, messages=triage_prompt)
             triage_result_text = str(triage_result).strip()
             # トリアージ結果を履歴に追加
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": f"[トリアージエージェント] 判定結果: {triage_result_text}"
-            })
+            if triage_result_text != "なし":
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": f"[トリアージエージェント] 判定結果: {triage_result_text}のデータを検索します。"
+                })
+            else:    
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": "[トリアージエージェント] 該当する種別はありません。"
+                })
+                
             # --- 振り分け ---
             if triage_result_text != "なし":
                 # ここでベクトル検索を実行し、結果をプロンプトに含める
@@ -167,7 +193,7 @@ if user_message:
                 search_results = []
                 for item in container.query_items(
                     query="""
-                        SELECT TOP 1 c.条文名, c.内容, VectorDistance(c.embedding, @embedding) AS SimilarityScore
+                        SELECT TOP 3 c.条文名, c.内容, VectorDistance(c.embedding, @embedding) AS SimilarityScore
                         FROM c
                         WHERE c.種別 = @type
                         ORDER BY VectorDistance(c.embedding, @embedding)
@@ -182,7 +208,19 @@ if user_message:
 
                 # 検索結果をテキスト化
                 if search_results:
-                    law_info = f"【参考条文】\n条文名: {search_results[0]['条文名']}\n内容: {search_results[0]['内容']}\n"
+                    law_info = f"【参考条文】\n①条文名: {search_results[0]['条文名']}\n内容: {search_results[0]['内容']}\n②条文名: {search_results[1]['条文名']}\n内容: {search_results[1]['内容']}\n③条文名: {search_results[2]['条文名']}\n内容: {search_results[2]['内容']}"
+                    
+                    def score_to_percent(score):
+                        # 距離が0に近いほど類似度が高いので、(1 - 距離) * 100 でパーセント化（0～1の範囲を想定）
+                        percent = max(0, min(100, round((1 - float(score)) * 100)))
+                        return percent
+
+                    statute_name = (
+                        f"【参考条文】  \n"
+                        f"①条文名: {search_results[0]['条文名']}（類似度: {score_to_percent(search_results[0]['SimilarityScore'])}%）  \n"
+                        f"②条文名: {search_results[1]['条文名']}（類似度: {score_to_percent(search_results[1]['SimilarityScore'])}%）  \n"
+                        f"③条文名: {search_results[2]['条文名']}（類似度: {score_to_percent(search_results[2]['SimilarityScore'])}%）"
+                    )
                 else:
                     law_info = "該当する条文は見つかりませんでした。"
 
@@ -193,15 +231,19 @@ if user_message:
                 ]
                 response = await law_search_agent.get_response(thread_id=thread.id, messages=prompt_messages)
                 agent_name = "法律検索エージェント"
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content":f"[{agent_name}] {str(statute_name)}"
+                })
             else:
-                # 該当する種別がない場合 → chat_agent
-                response = await chat_agent.get_response(thread_id=thread.id, messages=[f"User: {user_message}"])
-                agent_name = "一般チャットエージェント"
+                # 該当する種別がない場合 → assistant_agent
+                response = await assistant_agent.get_response(thread_id=thread.id, messages=[f"User: {user_message}"])
+                agent_name = "アシスタントエージェント"
          
             # 応答を履歴に追加
             st.session_state.messages.append({"role": "assistant", "content": f"[{agent_name}] {str(response)}"})
             try:
-                await thread.delete() if thread else None
+                await chat_client.agents.threads.delete(thread.id) if thread else None
             except Exception as e:
                 st.warning(f"スレッド削除を実行しました: {e}")
             try:
@@ -213,13 +255,13 @@ if user_message:
             except Exception as e:
                 st.warning(f"法律検索エージェント削除を実行しました: {e}")
             try:
-                await chat_client.agents.delete_agent(chat_agent.id)
+                await chat_client.agents.delete_agent(assistant_agent.id)
             except Exception as e:
-                st.warning(f"一般チャットエージェント削除を実行しました: {e}")
+                st.warning(f"アシスタントエージェント削除を実行しました: {e}")
             # exit/quit でスレッドとエージェントを削除・初期化
             if user_message.strip().lower() in ["exit", "quit"]:
                 try:
-                    await thread.delete()
+                    await delete_all_threads()
                 except Exception as e:
                     st.warning(f"スレッド削除を実行しました: {e}")
                 try:
@@ -231,7 +273,7 @@ if user_message:
                 except Exception as e:
                     st.warning(f"エージェント削除を実行しました: {e}")
                 try:
-                    await st.session_state.chat_client.agents.delete_agent(st.session_state.chat_agent.id)
+                    await st.session_state.chat_client.agents.delete_agent(st.session_state.assistant_agent.id)
                 except Exception as e:
                     st.warning(f"エージェント削除を実行しました: {e}")
                 # セッション状態を初期化
@@ -242,12 +284,13 @@ if user_message:
 
     asyncio.run(chat_with_agent())
 
+
+
+
 # 会話履歴の表示
 for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.chat_message("user").write(msg["content"])
     else:
         st.chat_message("assistant").write(msg["content"])
-
-
 
