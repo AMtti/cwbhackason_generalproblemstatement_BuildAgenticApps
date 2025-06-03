@@ -40,19 +40,26 @@ secret_client = SecretClient(vault_url=key_vault_url, credential=key_credential)
 
 # AI Foundryシークレットの取得
 aifoundry_endpoint = secret_client.get_secret("aiFoundryAgentEndpoint").value
-model_name=secret_client.get_secret("aiFoundryModel").value
 
-# Cosmos DBの接続情報
+# Azure OpenAIシークレットの取得
+aoai_api_key=secret_client.get_secret("textembeddingApiKey").value
+aoai_azure_endpoint=secret_client.get_secret("textembeddingEndpoint").value
+
+# Cosmos DBシークレットの取得
+cosmosdb_endpoint=secret_client.get_secret("cosmosdbendpoint").value
+cosmosdb_key=secret_client.get_secret("cosmosdbkey").value
+
+# Cosmos DB接続情報
 cosmosdb_client = CosmosClient(
-    secret_client.get_secret("cosmosdbendpoint").value,
-    secret_client.get_secret("cosmosdbkey").value
+    cosmosdb_endpoint,
+    cosmosdb_key
     )
-
+# Azure Blob Storage の接続情報
+connection_string = secret_client.get_secret("connectionstringUsers").value
 
  # Azure Blob Storage の接続情報
 def get_credentials_from_blob():
     # Azure Blob Storage の接続情報
-    connection_string = secret_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_name = "users.json"
     
@@ -175,21 +182,21 @@ def main_page():
 
     # Azure OpenAI クライアントの設定
     textembedding_client = AzureOpenAI(
-        api_key=secret_client.get_secret("textembeddingApiKey").value,
+        api_key=aoai_api_key,
         api_version="2024-12-01-preview",
-        azure_endpoint=secret_client.get_secret("textembeddingEndpoint").value
+        azure_endpoint=aoai_azure_endpoint
     )
 
     # 会話スレッドを初期化
-    if "thread_id" not in st.session_state:
-        async def initialize_thread():
-            async with AzureAIAgent.create_client(
-                credential=DefaultAzureCredential(),
-                endpoint=aifoundry_endpoint
-            ) as chat_client:
-                thread = await chat_client.agents.threads.create()
-                return thread.id
-        st.session_state.thread_id = asyncio.run(initialize_thread())
+    #if "thread_id" not in st.session_state:
+    #    async def initialize_thread():
+    #        async with AzureAIAgent.create_client(
+    #            credential=DefaultAzureCredential(),
+    #            endpoint=aifoundry_endpoint
+    #        ) as chat_client:
+    #            thread = await chat_client.agents.threads.create()
+    #            return thread.id
+    #    st.session_state.thread_id = asyncio.run(initialize_thread())
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -198,8 +205,20 @@ def main_page():
     user_message = st.chat_input("あなたのメッセージを入力してください(exit または quit で終了します。):")
 
     if user_message:
+        # スレッドIDがなければここで初めて生成
+        if "thread_id" not in st.session_state:
+            async def initialize_thread():
+                async with AzureAIAgent.create_client(
+                    credential=DefaultAzureCredential(),
+                    endpoint=aifoundry_endpoint
+                ) as chat_client:
+                    thread = await chat_client.agents.threads.create()
+                    return thread.id
+            st.session_state.thread_id = asyncio.run(initialize_thread())
+
         st.session_state.messages.append({"role": "user", "content": user_message})
 
+  
         async def chat_with_agent():
             async with AzureAIAgent.create_client(
                 credential=DefaultAzureCredential(),
@@ -207,7 +226,7 @@ def main_page():
             ) as chat_client:
                 # 1. トリアージエージェント
                 triage_settings = await chat_client.agents.create_agent(
-                    model=model_name,
+                    model="gpt-4o",
                     name="triage_agent",
                     instructions=f"""
                     あなたはユーザーの相談内容から、以下の種別リストに該当するものがあるか判定するAIです。
@@ -222,7 +241,7 @@ def main_page():
 
                 # 2. 法律検索エージェント
                 law_search_settings = await chat_client.agents.create_agent(
-                    model=model_name,
+                    model="gpt-4o",
                     name="law_search_agent",
                     instructions=f"""
                     あなたは法律検索の専門AIです。ユーザーの相談内容と該当種別に基づき、関連する法律情報を詳しく調べて回答してください。
@@ -236,7 +255,7 @@ def main_page():
 
                 # 3. アシスタントエージェント
                 chat_settings = await chat_client.agents.create_agent(
-                    model=model_name,
+                    model="gpt-4o",
                     name="assistant_agent",
                     instructions="あなたは法律相談のAIアシスタントです。一般的な質問に親切に答えてください。"
                 )
@@ -252,15 +271,18 @@ def main_page():
                 triage_result = await triage_agent.get_response(thread_id=thread.id, messages=triage_prompt)
                 triage_result_text = str(triage_result).strip()
                 # トリアージ結果を履歴に追加
+                agent_name = "トリアージエージェント"
                 if triage_result_text != "なし":
                     st.session_state.messages.append({
                         "role": "assistant",
-                        "content": f"[トリアージエージェント] 判定結果: {triage_result_text}のデータを検索します。"
+                        "content": f"[トリアージエージェント] 判定結果: {triage_result_text}のデータを検索します。",
+                        "agent_name": agent_name
                     })
                 else:    
                     st.session_state.messages.append({
                         "role": "assistant",
-                        "content": "[トリアージエージェント] 該当するデータはありません。"
+                        "content": "[トリアージエージェント] 該当するデータはありません。",
+                        "agent_name": agent_name
                     })
                     
                 # --- 振り分け ---
@@ -317,15 +339,17 @@ def main_page():
                     agent_name = "法律検索エージェント"
                     st.session_state.messages.append({
                         "role": "assistant",
-                        "content":f"[{agent_name}] {str(statute_name)}"
-                    })
+                        "content":f"[{agent_name}] {str(statute_name)}",
+                        "agent_name": agent_name # ← ここにエージェント名を追加
+                        })
+
                 else:
                     # 該当する種別がない場合 → assistant_agent
                     response = await assistant_agent.get_response(thread_id=thread.id, messages=[f"User: {user_message}"])
                     agent_name = "アシスタントエージェント"
             
                 # 応答を履歴に追加
-                st.session_state.messages.append({"role": "assistant", "content": f"[{agent_name}] {str(response)}"})
+                st.session_state.messages.append({"role": "assistant", "content": f"[{agent_name}] {str(response)}","agent_name": agent_name})
 
                 try:
                     await chat_client.agents.delete_agent(triage_agent.id)
@@ -342,6 +366,7 @@ def main_page():
                 # exit/quit でスレッドとエージェントを削除・初期化
                 if user_message.strip().lower() in ["exit", "quit"]:
                     try:
+                        print(thread.id)
                         await delete_all_threads()
                     except Exception as e:
                         st.warning(f"スレッド削除を実行しました: {e}")
@@ -360,6 +385,7 @@ def main_page():
                     # セッション状態を初期化
                     st.session_state.clear()
                     st.rerun()
+
                     
 
 
@@ -369,12 +395,19 @@ def main_page():
 
 
     # 会話履歴の表示
+
     for msg in st.session_state.messages:
         if msg["role"] == "user":
             st.chat_message("user").write(msg["content"])
+        elif msg.get("agent_name") == "法律検索エージェント":
+            st.chat_message("assistant", avatar="🟩").write(msg["content"])
+        elif msg.get("agent_name") == "アシスタントエージェント":
+            st.chat_message("assistant", avatar="🟨").write(msg["content"])
+        elif msg.get("agent_name") == "トリアージエージェント":
+            st.chat_message("assistant", avatar="🟦").write(msg["content"])
         else:
-            st.chat_message("assistant").write(msg["content"])
-   
+            st.chat_message("assistant", avatar="🔶").write(msg["content"])
+
     #サイドバー
     st.sidebar.image("../PNG/Ishigame_reading.png", caption="")     
     if st.sidebar.button("メンテナンスページへ移動"):
@@ -559,15 +592,15 @@ def upload_xml_page():
 def create_embedding_and_save_to_cosmos_db(json_data):
     # Cosmos DBの接続情報
     cosmos_client = CosmosClient(
-        secret_client.get_secret("cosmosdbendpoint").value, 
-        secret_client.get_secret("cosmosdbkey").value
+        cosmosdb_endpoint, 
+        cosmosdb_key
         )
 
     # OpenAIの設定
     textemb_client = AzureOpenAI(
-        api_key=secret_client.get_secret("textembeddingApiKey").value,
+        api_key=aoai_api_key,
         api_version="2024-12-01-preview",
-        azure_endpoint=secret_client.get_secret("textembeddingEndpoint").value
+        azure_endpoint=aoai_azure_endpoint
     )
 
     # データベースとコンテナーの設定
@@ -755,7 +788,6 @@ def xml_to_json(root):
 #管理者の認証情報を取得
 def get_admin_credentials_from_blob():
     # Azure Blob Storage の接続情報
-    connection_string = secret_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_admin_name = "admi.json"   
     # Blob Storage に接続
@@ -832,7 +864,6 @@ def admin():
 
 # Blobデータをダウンロード
 def download_blob_data():
-    connection_string = secret_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_name = "users.json"
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
@@ -842,7 +873,6 @@ def download_blob_data():
 
 # Blobデータをアップロード
 def upload_blob_data(data):
-    connection_string = secret_client.get_secret("connectionstringUsers").value
     container_name = "users"
     blob_name = "users.json"
 

@@ -17,9 +17,22 @@ import uuid # UUIDを生成するためのライブラリ
 from azure.identity import DefaultAzureCredential as key_DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
 
-
 # Key Vault URI
 key_vault_url = "https://keytaccountcwbhackasonam.vault.azure.net/"
+# Azure へのログインが必要な場合の例外処理
+from azure.core.exceptions import ClientAuthenticationError
+
+try:
+    key_credential = key_DefaultAzureCredential()
+    secret_client = SecretClient(vault_url=key_vault_url, credential=key_credential)
+    # シークレットの取得例
+    aifoundry_endpoint = secret_client.get_secret("aiFoundryAgentEndpoint").value
+except ClientAuthenticationError:
+    st.error("Azure にログインしてから再度実行してください。")
+    st.stop()
+except Exception as e:
+    st.error(f"Azure認証エラー: {e}")
+    st.stop()
 
 # Key Vault 認証クライアントを作成
 key_credential = key_DefaultAzureCredential()
@@ -27,13 +40,14 @@ secret_client = SecretClient(vault_url=key_vault_url, credential=key_credential)
 
 # AI Foundryシークレットの取得
 aifoundry_endpoint = secret_client.get_secret("aiFoundryAgentEndpoint").value
-model_name=secret_client.get_secret("aiFoundryModel").value
+#model_name=secret_client.get_secret("aiFoundryModel").value
 
 # Cosmos DBの接続情報
 cosmosdb_client = CosmosClient(
     secret_client.get_secret("cosmosdbendpoint").value,
     secret_client.get_secret("cosmosdbkey").value
     )
+
 
  # Azure Blob Storage の接続情報
 def get_credentials_from_blob():
@@ -95,7 +109,7 @@ def authenticate():
             st.error("IDまたはパスワードが間違っています！")
             
      #サイドバー
-    st.sidebar.image("../Ishigame_reading.png", caption="") 
+    st.sidebar.image("../PNG/Ishigame_reading.png", caption="") 
     if st.sidebar.button("メインページに戻る"):
         st.session_state.page = 'main'
 
@@ -167,15 +181,6 @@ def main_page():
     )
 
     # 会話スレッドを初期化
-    if "thread_id" not in st.session_state:
-        async def initialize_thread():
-            async with AzureAIAgent.create_client(
-                credential=DefaultAzureCredential(),
-                endpoint=aifoundry_endpoint
-            ) as chat_client:
-                thread = await chat_client.agents.threads.create()
-                return thread.id
-        st.session_state.thread_id = asyncio.run(initialize_thread())
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -184,8 +189,20 @@ def main_page():
     user_message = st.chat_input("あなたのメッセージを入力してください(exit または quit で終了します。):")
 
     if user_message:
+        # スレッドIDがなければここで初めて生成
+        if "thread_id" not in st.session_state:
+            async def initialize_thread():
+                async with AzureAIAgent.create_client(
+                    credential=DefaultAzureCredential(),
+                    endpoint=aifoundry_endpoint
+                ) as chat_client:
+                    thread = await chat_client.agents.threads.create()
+                    return thread.id
+            st.session_state.thread_id = asyncio.run(initialize_thread())
+
         st.session_state.messages.append({"role": "user", "content": user_message})
 
+  
         async def chat_with_agent():
             async with AzureAIAgent.create_client(
                 credential=DefaultAzureCredential(),
@@ -238,15 +255,18 @@ def main_page():
                 triage_result = await triage_agent.get_response(thread_id=thread.id, messages=triage_prompt)
                 triage_result_text = str(triage_result).strip()
                 # トリアージ結果を履歴に追加
+                agent_name = "トリアージエージェント"
                 if triage_result_text != "なし":
                     st.session_state.messages.append({
                         "role": "assistant",
-                        "content": f"[トリアージエージェント] 判定結果: {triage_result_text}のデータを検索します。"
+                        "content": f"[トリアージエージェント] 判定結果: {triage_result_text}のデータを検索します。",
+                        "agent_name": agent_name
                     })
                 else:    
                     st.session_state.messages.append({
                         "role": "assistant",
-                        "content": "[トリアージエージェント] 該当するデータはありません。"
+                        "content": "[トリアージエージェント] 該当するデータはありません。",
+                        "agent_name": agent_name
                     })
                     
                 # --- 振り分け ---
@@ -303,15 +323,17 @@ def main_page():
                     agent_name = "法律検索エージェント"
                     st.session_state.messages.append({
                         "role": "assistant",
-                        "content":f"[{agent_name}] {str(statute_name)}"
-                    })
+                        "content":f"[{agent_name}] {str(statute_name)}",
+                        "agent_name": agent_name # ← ここにエージェント名を追加
+                        })
+
                 else:
                     # 該当する種別がない場合 → assistant_agent
                     response = await assistant_agent.get_response(thread_id=thread.id, messages=[f"User: {user_message}"])
                     agent_name = "アシスタントエージェント"
             
                 # 応答を履歴に追加
-                st.session_state.messages.append({"role": "assistant", "content": f"[{agent_name}] {str(response)}"})
+                st.session_state.messages.append({"role": "assistant", "content": f"[{agent_name}] {str(response)}","agent_name": agent_name})
 
                 try:
                     await chat_client.agents.delete_agent(triage_agent.id)
@@ -328,7 +350,7 @@ def main_page():
                 # exit/quit でスレッドとエージェントを削除・初期化
                 if user_message.strip().lower() in ["exit", "quit"]:
                     try:
-                        print
+                        print(thread.id)
                         await delete_all_threads()
                     except Exception as e:
                         st.warning(f"スレッド削除を実行しました: {e}")
@@ -347,6 +369,7 @@ def main_page():
                     # セッション状態を初期化
                     st.session_state.clear()
                     st.rerun()
+
                     
 
 
@@ -356,14 +379,21 @@ def main_page():
 
 
     # 会話履歴の表示
+
     for msg in st.session_state.messages:
         if msg["role"] == "user":
             st.chat_message("user").write(msg["content"])
+        elif msg.get("agent_name") == "法律検索エージェント":
+            st.chat_message("assistant", avatar="🟩").write(msg["content"])
+        elif msg.get("agent_name") == "アシスタントエージェント":
+            st.chat_message("assistant", avatar="🟨").write(msg["content"])
+        elif msg.get("agent_name") == "トリアージエージェント":
+            st.chat_message("assistant", avatar="🟦").write(msg["content"])
         else:
-            st.chat_message("assistant").write(msg["content"])
-    
+            st.chat_message("assistant", avatar="🔶").write(msg["content"])
+
     #サイドバー
-    st.sidebar.image("../Ishigame_reading.png", caption="")     
+    st.sidebar.image("../PNG/Ishigame_reading.png", caption="")     
     if st.sidebar.button("メンテナンスページへ移動"):
         st.session_state.page = 'login'
 
@@ -417,7 +447,7 @@ def maintenance_page():
             st.session_state.page = "delete"
 
     #サイドバー
-    st.sidebar.image("../Ishigame_working.png", caption="")     
+    st.sidebar.image("../PNG/Ishigame_working.png", caption="")     
     if st.sidebar.button("ログアウト"):
         st.session_state.authenticated = False
         st.session_state.page = "main"
@@ -460,7 +490,7 @@ def change_password():
         else:
             st.error("新しいパスワードを入力してください。")
     #サイドバー
-    st.sidebar.image("../Ishigame_working.png", caption="")     
+    st.sidebar.image("../PNG/Ishigame_working.png", caption="")     
     if st.sidebar.button("ログアウト"):
         st.session_state.authenticated = False
         st.session_state.page = "main"
@@ -532,7 +562,7 @@ def upload_xml_page():
         st.write("ファイルがアップロードされていません。")
 
     #サイドバー
-    st.sidebar.image("../Ishigame_working.png", caption="")
+    st.sidebar.image("../PNG/Ishigame_working.png", caption="")
     if st.sidebar.button("ファイル削除"):
         st.session_state.page = "delete" 
     if st.sidebar.button("メンテナンスページに戻る"):
@@ -654,7 +684,7 @@ def deleteByPatition_page():
         st.session_state.page = "maintenance"
 
     #サイドバー
-    st.sidebar.image("../Ishigame_cleaning.png", caption="")     
+    st.sidebar.image("../PNG/Ishigame_cleaning.png", caption="")     
     if st.sidebar.button("XMLアップロード"):
         st.session_state.page = "upload_xml" 
     if st.sidebar.button("メンテナンスページに戻る"):
@@ -784,7 +814,7 @@ def authenticate_admin():
             st.error("IDまたはパスワードが間違っています！")
 
     # サイドバー
-    st.sidebar.image("../Ishigame_working.png", caption="")
+    st.sidebar.image("../PNG/Ishigame_working.png", caption="")
     if st.sidebar.button("メンテナンスページに戻る"):
         st.session_state.page = 'maintenance'
 # 管理者ページ
@@ -812,7 +842,7 @@ def admin():
         if st.button("ユーザー削除"):
             st.session_state.page = "del_User"
     # サイドバー
-    st.sidebar.image("../Ishigame_working.png", caption="キャプションをここに書く")
+    st.sidebar.image("../PNG/Ishigame_working.png", caption="キャプションをここに書く")
 
     if st.sidebar.button("メンテナンスページに戻る"):
         st.session_state.page = 'maintenance'
@@ -873,7 +903,7 @@ def add_user():
             st.error("ユーザー名とパスワードを入力してください。")
 
     #サイドバー
-    st.sidebar.image("../Ishigame_working.png", caption="")
+    st.sidebar.image("../PNG/Ishigame_working.png", caption="")
     if st.sidebar.button("ユーザー削除"):
         st.session_state.page = "del_User"    
     if st.sidebar.button("メンテナンスページに戻る"):
@@ -915,7 +945,7 @@ def del_user():
         else:
             st.error("ユーザー名を入力してください。")
     #サイドバー
-    st.sidebar.image("../Ishigame_working.png", caption="キャプションをここに書く")
+    st.sidebar.image("../PNG/Ishigame_working.png", caption="キャプションをここに書く")
     if st.sidebar.button("ユーザー追加"):
         st.session_state.page = "add_User"   
     if st.sidebar.button("メンテナンスページに戻る"):
