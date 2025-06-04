@@ -7,6 +7,47 @@ Azure AI Foundryのエージェント（トリアージ・法律検索・アシ�
 管理者はXMLファイルによる法律データのアップロードやユーザー管理が可能です。
 主な利用シーンは、ユーザーが法律に関する困りごとを入力すると、AIが関連する法律条文を自動で検索し、分かりやすく提示することです。
 
+```mermaid
+graph TD
+    subgraph ユーザー
+        A[Streamlit Webアプリ]
+    end
+
+    subgraph Azure
+        B[Azure AI Foundry<br>（エージェント/スレッド）]
+        C[Azure OpenAI<br>（埋め込み生成）]
+        D[Azure Cosmos DB<br>（法律データ保存・検索）]
+        E[Azure Blob Storage<br>（ユーザー/管理者情報）]
+        F[Azure Key Vault<br>（シークレット管理）]
+    end
+
+    %% ユーザー操作
+    A -- 相談・管理操作 --> B
+    A -- 相談・管理操作 --> D
+    A -- 相談・管理操作 --> E
+
+    %% AI Foundry連携
+    B -- 法律検索/分類プロンプト --> C
+    B -- 法律検索/分類プロンプト --> D
+
+    %% OpenAI埋め込み
+    A -- 法律データアップロード時 --> C
+    C -- 埋め込みベクトル --> D
+
+    %% Cosmos DB
+    D -- 法律データ取得/保存 --> A
+
+    %% Blob Storage
+    A -- ログイン/ユーザー管理 --> E
+
+    %% Key Vault
+    A -- シークレット取得 --> F
+    B -- シークレット取得 --> F
+    C -- シークレット取得 --> F
+    D -- シークレット取得 --> F
+    E -- シークレット取得 --> F
+```
+
 #main.py
 delete_all_threads
 Azure AI Foundryの全スレッド（会話履歴）を非同期で削除する関数。メンテナンスやリセット時に使用。
