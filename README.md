@@ -77,7 +77,33 @@ flowchart TD
     B -- 該当種別なし --> H[アシスタントエージェントが一般的な回答生成]
     H --> I[ユーザーに一般的な回答を表示]
 ```
+XMLファイル追加時の流れは以下の通りです。
 
+メンテナンスページで「XMLアップロード」ボタンを押す
+　→ upload_xml_page 関数が呼ばれ、アップロード画面が表示されます。
+
+e-Gov法令検索サイト等から取得したXMLファイルをアップロード
+　→ ファイル形式がXMLか確認され、内容の一部が画面に表示されます。
+
+「実行」ボタンを押すと、XMLの内容がパースされJSON化
+　→ xml_to_json 関数で法律名・条文ごとにデータを抽出し、JSON形式に変換します。
+
+埋め込み生成とCosmos DB保存
+　→ create_embedding_and_save_to_cosmos_db 関数で、各条文ごとにAzure OpenAIで埋め込みベクトルを生成し、Cosmos DBに法律名（種別）ごとに保存します。
+
+完了メッセージ表示
+　→ 「埋め込みを作成し、Azure Cosmos DBに保存しました」と表示され、法律データが検索対象として利用可能になります。
+```mermaid
+flowchart TD
+    A[メンテナンスページで<br>「XMLアップロード」ボタンを押す] --> B[upload_xml_page関数で<br>アップロード画面を表示]
+    B --> C[XMLファイルをアップロード]
+    C --> D[ファイル形式を確認し<br>内容の一部を表示]
+    D --> E[「実行」ボタンを押す]
+    E --> F[xml_to_json関数で<br>XMLをJSONに変換]
+    F --> G[create_embedding_and_save_to_cosmos_db関数で<br>埋め込み生成＆Cosmos DB保存]
+    G --> H[「埋め込みを作成し、<br>Azure Cosmos DBに保存しました」<br>と完了メッセージ表示]
+```
+ 
 #main.py
 delete_all_threads
 Azure AI Foundryの全スレッド（会話履歴）を非同期で削除する関数。メンテナンスやリセット時に使用。
