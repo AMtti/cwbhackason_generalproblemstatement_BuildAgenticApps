@@ -13,14 +13,18 @@ secret_client = SecretClient(vault_url=key_vault_url, credential=key_credential)
 
 # AI Foundryシークレットの取得
 aifoundry_endpoint = secret_client.get_secret("aiFoundryAgentEndpoint").value
+aifoundry_chatmodel = "gpt-4o"
 
 # Azure OpenAIシークレットの取得
 aoai_api_key=secret_client.get_secret("textembeddingApiKey").value
 aoai_azure_endpoint=secret_client.get_secret("textembeddingEndpoint").value
-
+aoai_embedingmodel="text-embedding-3-large"
 # Cosmos DBシークレットの取得
 cosmosdb_endpoint=secret_client.get_secret("cosmosdbendpoint").value
 cosmosdb_key=secret_client.get_secret("cosmosdbkey").value
+# データベースとコンテナーの情報
+database_name = "LegalNest"
+container_name = "Statute"
 
 # Azure Blob Storage シークレットの取得
 connection_string = secret_client.get_secret("connectionstringUsers").value

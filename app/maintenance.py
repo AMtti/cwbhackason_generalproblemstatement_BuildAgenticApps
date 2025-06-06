@@ -12,8 +12,8 @@ from openai import AzureOpenAI  # OpenAIのAPIを扱うためのライブラリ
 import uuid # UUIDを生成するためのライブラリ
 
 from keys import (
-     aoai_api_key, aoai_azure_endpoint,
-    cosmosdb_endpoint, cosmosdb_key,
+     aoai_api_key, aoai_azure_endpoint,aoai_embedingmodel,
+    cosmosdb_endpoint, cosmosdb_key,database_name, container_name,
     connection_string)
 
 #Cosmos DBの接続情報
@@ -80,11 +80,6 @@ def maintenance_page():
     st.write("ファイルのアップロードや削除を行うことができます。")
     st.write("ファイル追加する場合はe-Gov法令検索サイトから法律を検索し、XMLファイルをアップロードしてください。")
     st.markdown('[e-Gov法令検索サイトはこちら](https://laws.e-gov.go.jp/)')
-
-
-    # データベースとコンテナーの情報
-    database_name = "LegalNest"
-    container_name = "Statute"
 
     # データベースとコンテナーのクライアント取得
     database = cosmosdb_client.get_database_client(database_name)
@@ -279,7 +274,7 @@ def create_embedding_and_save_to_cosmos_db(json_data):
         # OpenAI APIを使用して埋め込みを生成
         embedding_response = textemb_client.embeddings.create(
             input=[text_to_embed],  # リストで渡す
-            model="text-embedding-3-large"
+            model=aoai_embedingmodel
         )
         #embedding_response = response.json_data[0].embedding
         embedding = embedding_response.data[0].embedding

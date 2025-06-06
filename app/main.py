@@ -12,7 +12,7 @@ from azure.cosmos import CosmosClient
 from keys import (
     key_vault_url, key_DefaultAzureCredential,
     aifoundry_endpoint, aoai_api_key, aoai_azure_endpoint,
-    cosmosdb_endpoint, cosmosdb_key)
+    cosmosdb_endpoint, cosmosdb_key,database_name, container_name,aifoundry_chatmodel,aoai_embedingmodel)
 
 #Cosmos DBの接続情報
 cosmosdb_client = CosmosClient(
@@ -82,10 +82,6 @@ def main_page():
     st.title("困りごと相談AIアプリ")
     st.markdown("現在登録されているデータのリストです。相談を入力してください。")
 
-    # データベースとコンテナーの情報
-    database_name = "LegalNest"
-    container_name = "Statute"
-
     # データベースとコンテナーのクライアント取得
     database = cosmosdb_client.get_database_client(database_name)
     container = database.get_container_client(container_name)
@@ -151,7 +147,7 @@ def main_page():
             ) as chat_client:
                 # 1. トリアージエージェント
                 triage_settings = await chat_client.agents.create_agent(
-                    model="gpt-4o",
+                    model=aifoundry_chatmodel,
                     name="triage_agent",
                     instructions=f"""
                     あなたはユーザーの相談内容から、以下の種別リストに該当するものがあるか判定するAIです。
@@ -166,7 +162,7 @@ def main_page():
 
                 # 2. 法律検索エージェント
                 law_search_settings = await chat_client.agents.create_agent(
-                    model="gpt-4o",
+                    model=aifoundry_chatmodel,
                     name="law_search_agent",
                     instructions=f"""
                     あなたは法律検索の専門AIです。ユーザーの相談内容と該当種別に基づき、関連する法律情報を詳しく調べて回答してください。
@@ -180,7 +176,7 @@ def main_page():
 
                 # 3. アシスタントエージェント
                 chat_settings = await chat_client.agents.create_agent(
-                    model="gpt-4o",
+                    model=aifoundry_chatmodel,
                     name="assistant_agent",
                     instructions="あなたは法律相談のAIアシスタントです。一般的な質問に親切に答えてください。"
                 )
@@ -216,7 +212,7 @@ def main_page():
                     # 類似検索に使用するベクトル埋め込みデータ
                     response = textembedding_client.embeddings.create(
                         input=user_message,
-                        model="text-embedding-3-large"
+                        model=aoai_embedingmodel
                     )
                     query_embedding = response.data[0].embedding
 
