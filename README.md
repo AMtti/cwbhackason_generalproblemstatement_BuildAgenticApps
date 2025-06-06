@@ -304,3 +304,10 @@ flowchart TD
 
 ### keys.py
 Azure Key Vaultから各種サービス（AI Foundry、Azure OpenAI、Cosmos DB、Blob Storage）のシークレット値（エンドポイントやAPIキー、接続文字列など）を安全に取得し、グローバル変数として他モジュールで利用できるようにする。
+
+## このレポジトリについて
+Code; Without Barriers Hackathon 2025（こちら）への課題提出用であり、Microsoft公式が開発したものではありません。
+
+利用技術: Azure AI Foundry、Azure OpenAI、Azure Cosmos DB　を採用しています。
+
+セキュリティおよびプライバシー: このレポジトリに含まれる情報やコードを利用することによって生じた損害については、一切の責任を負いかねます。利用者自身の責任においてご利用ください。なお、このアプリは試験的な目的で作成されたものであり、本番環境での使用は推奨されません。
