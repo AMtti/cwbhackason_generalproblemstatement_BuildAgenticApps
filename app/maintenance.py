@@ -1,7 +1,6 @@
 import streamlit as st # Streamlitを使用してWebアプリケーションを作成するためのライブラリ
 
 import pandas as pd #データフレームを扱うためのライブラリ
-from pypdf import PdfReader # PDFからテキストを抽出するためのライブラリ
 import xml.etree.ElementTree as ET # XMLからテキストを抽出するためのライブラリ
 import json # JSONファイルを扱うためのライブラリ
 
@@ -374,14 +373,7 @@ def delete_items(container, category):
     # 該当アイテムを削除
     for item in dei_id_items:
         container.delete_item(item=item["id"], partition_key=category)
-# PDFからテキストを抽出
-def extract_text_from_pdf(uploaded_file):
-    #uploaded_file.seek(0)  # ストリームの先頭に戻す
-    reader = PdfReader(uploaded_file)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text()
-    return text
+
 
 # XMLからテキストを抽出
 def extract_text_from_xml(element):
